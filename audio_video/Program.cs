@@ -2,11 +2,13 @@
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using NAudio.Wave;
 using OpenCvSharp;
 using Xabe.FFmpeg;
+
 
 namespace audio_video
 {
@@ -15,6 +17,7 @@ namespace audio_video
         static string outputDirectory, fileName;
         static int deleteAfterSeconds;
         static bool recording = true;
+        private static Timer timer;
 
         static async Task Main(string[] args)
         {
@@ -38,7 +41,7 @@ namespace audio_video
             Console.WriteLine("Unesite broj sati nakon kojeg će se datoteka automatski obrisati (pritisnite Enter za 1 sat): ");
             string input = Console.ReadLine();
             int deleteAfterHours = string.IsNullOrWhiteSpace(input) ? 1 : (int.TryParse(input, out int hours) ? hours : 1);
-            deleteAfterSeconds = deleteAfterHours * 10;
+            deleteAfterSeconds = deleteAfterHours * 3600;
 
             Console.WriteLine("Odaberite način snimanja:\n1 - Audio\n2 - Video\n3 - Audio + Video");
             string choice = Console.ReadLine();
@@ -51,20 +54,23 @@ namespace audio_video
             {
                 case "1":
                     RecordAudio(audioFile);
+                    StartAutoDelete(audioFile, deleteAfterSeconds);
                     break;
                 case "2":
                     RecordVideo(videoFile);
+                    StartAutoDelete(videoFile, deleteAfterSeconds); 
                     break;
                 case "3":
                     await RecordVideoPlusAudio(videoFile, audioFile, outputFile);
+                    StartAutoDelete(outputFile, deleteAfterSeconds);
                     break;
                 default:
                     Console.WriteLine("Nepoznata opcija.");
                     break;
             }
 
-            Console.WriteLine($"Datoteke će se automatski brisati nakon {deleteAfterSeconds} sekundi.");
-            StartAutoDelete();
+            Console.WriteLine($"Datoteke će se automatski brisati nakon {deleteAfterHours}h.");
+            Console.ReadLine();
 
         }
 
@@ -152,6 +158,7 @@ namespace audio_video
                 {
                     Console.ReadLine();
                     cts.Cancel();
+                    recording = false;
                 });
 
                 Console.WriteLine("Snimanje u tijeku... Pritisnite Enter za prekid.");
@@ -267,31 +274,29 @@ namespace audio_video
         }
 
 
-        static void StartAutoDelete()
+        static void StartAutoDelete(string filePath, int deleteAfterSeconds)
         {
-            Task.Run(async () =>
-            {
-                while (true)
-                {
-                    try
-                    {
-                        foreach (var file in Directory.GetFiles(outputDirectory))
-                        {
-                            if (File.GetCreationTime(file).AddSeconds(deleteAfterSeconds) < DateTime.Now)
-                            {
-                                File.Delete(file);
-                                Console.WriteLine($"Obrisan: {file}");
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine("Greška kod automatskog brisanja: " + ex.Message);
-                    }
-
-                    await Task.Delay(1000);
-                }
-            });
+            timer = new Timer(_ => OnTimedEvent(filePath), null, deleteAfterSeconds * 1000, Timeout.Infinite);
         }
+        private static void OnTimedEvent(string filePath)
+        {
+            try
+            {
+                if (File.Exists(filePath))
+                {
+                    File.Delete(filePath);
+                    Console.WriteLine("Fajl je izbrisan.");
+                }
+                else
+                {
+                    Console.WriteLine("Fajl ne postoji na navedenoj putanji.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Došlo je do greške prilikom brisanja fajla: " + ex.Message);
+            }
+        }
+        
     }
 }
